@@ -2,172 +2,160 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<title>Mini Çiftliğimiz ❤️</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Çiftlik Oyunu</title>
 
 <style>
-body { margin:0; font-family:Arial; overflow:hidden; }
-.day { background:#9be59b; }
-.night { background:#1e2a38; color:white; }
-
-#ui {
-  position:fixed; top:0; left:0; right:0;
-  background:rgba(255,255,255,.9);
-  z-index:10; padding:4px; text-align:center;
-}
-
-#map {
-  position:absolute;
-  width:2000px; height:2000px;
-}
-
-.player,.animal,.house {
-  position:absolute;
-  font-size:32px;
-  transition: left .4s linear, top .4s linear;
-}
-
-#chat {
-  position:fixed; bottom:0; left:0; right:0;
-  background:white; z-index:10;
-}
-
-#messages { height:80px; overflow:auto; font-size:14px; }
-
-button,input { padding:6px; margin:2px; }
+body{margin:0;font-family:Arial;overflow:hidden}
+#world{width:3000px;height:3000px;position:relative}
+.day{background:#7ec850}
+.night{background:#1a2a3a}
+.player{width:40px;height:40px;border-radius:50%;position:absolute;background:red;z-index:5}
+.other{background:blue}
+.animal{width:30px;height:30px;border-radius:50%;background:brown;position:absolute}
+.house{width:200px;height:200px;background:#8b5a2b;position:absolute;left:1400px;top:1400px}
+#ui{position:fixed;top:10px;left:10px;background:#fff;padding:8px;border-radius:8px;z-index:10}
+#inventory,#market{position:fixed;top:80px;right:10px;background:#fff;padding:8px;border-radius:8px;display:none;z-index:10}
+#chat{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:5px}
+#messages{max-height:100px;overflow:auto;font-size:12px}
+#joystick{position:fixed;bottom:80px;left:20px;width:120px;height:120px;border-radius:50%;background:rgba(0,0,0,.2)}
+#stick{width:50px;height:50px;border-radius:50%;background:#444;position:absolute;left:35px;top:35px}
+button{margin-top:4px}
 </style>
 </head>
 
 <body class="day">
 
 <div id="ui">
-  <input id="room" placeholder="Oda">
-  <button onclick="join()">GİR</button>
-  <span id="money">💰0</span>
-  <span id="heart">❤️0</span>
-  <button onclick="buyHouse()">🏠 Ev (50)</button>
-  <button onclick="exitHouse()">🚪 Çık</button>
+<input id="room" placeholder="Oda">
+<button onclick="join()">GİR</button><br>
+💰<span id="money">0</span>
+<button onclick="toggleInv()">🎒</button>
+<button onclick="toggleMarket()">🏪</button>
 </div>
 
-<div id="map" onclick="moveMe(event)"></div>
+<div id="inventory">
+<b>Envanter</b><br>
+🥛 Süt: <span id="milk">0</span>
+</div>
+
+<div id="market">
+<b>Market</b><br>
+<button onclick="sellMilk()">🥛 Süt Sat (50)</button>
+</div>
+
+<div id="world">
+<div class="house"></div>
+</div>
+
+<div id="joystick"><div id="stick"></div></div>
 
 <div id="chat">
-  <div id="messages"></div>
-  <input id="msg" placeholder="Mesaj">
-  <button onclick="sendMsg()">Gönder</button>
+<input id="msg"><button onclick="send()">Gönder</button>
+<div id="messages"></div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue, push, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-<script>
-// 🔥 FIREBASE
-firebase.initializeApp({
-  apiKey: "AIzaSyBVajz1TsPuM9a2eiCRsPZpVu3NvSA5l1Y",
-  authDomain: "ciftlik-fbced.firebaseapp.com",
-  databaseURL: "https://ciftlik-fbced-default-rtdb.firebaseio.com",
-  projectId: "ciftlik-fbced"
-});
-const db=firebase.database();
+const firebaseConfig={
+ apiKey:"AIzaSyBVajz1TsPuM9a2eiCRsPZpVu3NvSA5l1Y",
+ authDomain:"ciftlik-fbced.firebaseapp.com",
+ databaseURL:"https://ciftlik-fbced-default-rtdb.firebaseio.com",
+ projectId:"ciftlik-fbced",
+ appId:"1:585953196707:web:9768d229040ca27755dd16"
+};
 
-let room="", me=Math.random().toString(36).slice(2);
-let icon=Math.random()>0.5?"👨":"👩";
-let inside=false;
+const app=initializeApp(firebaseConfig);
+const db=getDatabase(app);
 
-const map=document.getElementById("map");
+let room="",me="p"+Math.random().toString(36).slice(2);
+let x=1500,y=1500,money=0,milk=0,lastMilk=0,inside=false;
+const world=document.getElementById("world");
 
 function join(){
-  room=roomInput.value;
-  db.ref("rooms/"+room+"/players/"+me).set({icon,x:300,y:300,inside:false});
+ room=document.getElementById("room").value;
+ set(ref(db,"rooms/"+room+"/players/"+me),{x,y,money,milk,inside});
+ onValue(ref(db,"rooms/"+room),snap=>{
+  const r=snap.val()||{};
+  world.innerHTML='<div class="house"></div>';
+  document.body.className=r.day?"day":"night";
 
-  db.ref("rooms/"+room).on("value",s=>{
-    const r=s.val()||{};
-    render(r);
-    money.innerText="💰"+(r.money||0);
-    heart.innerText="❤️"+(r.heart||0);
-    document.body.className=r.day?"day":"night";
+  Object.entries(r.players||{}).forEach(([id,p])=>{
+   const d=document.createElement("div");
+   d.className="player"+(id!==me?" other":"");
+   d.style.left=p.x+"px";
+   d.style.top=p.y+"px";
+   world.appendChild(d);
+   if(id===me){money=p.money;milk=p.milk;}
   });
 
-  db.ref("rooms/"+room+"/chat").limitToLast(20).on("child_added",s=>{
-    messages.innerHTML+=`<div>${s.val()}</div>`;
-    messages.scrollTop=9999;
+  Object.values(r.animals||{}).forEach(a=>{
+   const d=document.createElement("div");
+   d.className="animal";
+   d.style.left=a.x+"px";
+   d.style.top=a.y+"px";
+   world.appendChild(d);
   });
 
-  setInterval(tick,5000);
-  setInterval(()=>db.ref("rooms/"+room+"/day").transaction(v=>!v),15000);
+  document.getElementById("money").innerText=money;
+  document.getElementById("milk").innerText=milk;
+ });
+ setInterval(()=>update(ref(db,"rooms/"+room),{day:Math.random()>0.5}),20000);
 }
 
-function moveMe(e){
-  db.ref("rooms/"+room+"/players/"+me).update({
-    x:e.clientX+window.scrollX,
-    y:e.clientY+window.scrollY
-  });
+set(ref(db,"rooms/demo/animals"),{
+ a1:{x:1300,y:1300},a2:{x:1600,y:1500}
+});
+
+function tryMilk(){
+ const now=Date.now();
+ if(now-lastMilk<10000) return alert("Hayvan yoruldu");
+ milk++; lastMilk=now;
+ update(ref(db,"rooms/"+room+"/players/"+me),{milk});
 }
 
-function render(r){
-  map.innerHTML="";
-  for(let p in r.players){
-    const pl=r.players[p];
-    if(pl.inside!==inside) continue;
-    let d=document.createElement("div");
-    d.className="player"; d.innerText=pl.icon;
-    d.style.left=pl.x+"px";
-    d.style.top=pl.y+"px";
-    map.appendChild(d);
-  }
-  for(let h in r.houses||{}){
-    let d=document.createElement("div");
-    d.className="house"; d.innerText="🏠";
-    d.style.left=r.houses[h].x+"px";
-    d.style.top=r.houses[h].y+"px";
-    d.onclick=()=>enterHouse();
-    map.appendChild(d);
-  }
+function sellMilk(){
+ if(milk<=0) return;
+ milk--; money+=50;
+ update(ref(db,"rooms/"+room+"/players/"+me),{milk,money});
 }
 
-function buyHouse(){
-  db.ref("rooms/"+room).transaction(r=>{
-    r=r||{};
-    if((r.money||0)>=50){
-      r.money-=50;
-      r.houses=r.houses||{};
-      r.houses[Math.random()]={x:500,y:500};
-    }
-    return r;
-  });
+document.addEventListener("keydown",e=>{
+ if(e.key==="e"){ // ev gir
+  inside=!inside;
+  alert(inside?"Eve girdin":"Evden çıktın");
+ }
+ if(e.key==="f") tryMilk();
+});
+
+function toggleInv(){inv.style.display=inv.style.display?"":"block"}
+function toggleMarket(){market.style.display=market.style.display?"":"block"}
+
+function send(){
+ push(ref(db,"rooms/"+room+"/chat"),msg.value);
+ msg.value="";
 }
 
-function enterHouse(){
-  inside=true;
-  document.body.style.background="#f5deb3";
-  db.ref("rooms/"+room+"/players/"+me+"/inside").set(true);
-}
+onValue(ref(db,"rooms/"+room+"/chat"),s=>{
+ messages.innerHTML="";
+ Object.values(s.val()||{}).forEach(t=>messages.innerHTML+=`<div>${t}</div>`);
+});
 
-function exitHouse(){
-  inside=false;
-  document.body.style.background="";
-  db.ref("rooms/"+room+"/players/"+me+"/inside").set(false);
-}
-
-function tick(){
-  db.ref("rooms/"+room).transaction(r=>{
-    r=r||{};
-    const players=Object.values(r.players||{});
-    const insideCount=players.filter(p=>p.inside).length;
-    if(insideCount>=2){
-      r.heart=(r.heart||0)+1;
-      r.money=(r.money||0)+2;
-    }
-    return r;
-  });
-}
-
-function sendMsg(){
-  if(!msg.value) return;
-  db.ref("rooms/"+room+"/chat").push(icon+": "+msg.value);
-  msg.value="";
-}
+// MOBİL JOYSTICK
+let stick=document.getElementById("stick"),joy=document.getElementById("joystick");
+joy.ontouchmove=e=>{
+ let r=joy.getBoundingClientRect();
+ let t=e.touches[0];
+ let dx=t.clientX-r.left-60;
+ let dy=t.clientY-r.top-60;
+ x+=dx*0.05; y+=dy*0.05;
+ stick.style.left=dx+60+"px";
+ stick.style.top=dy+60+"px";
+ update(ref(db,"rooms/"+room+"/players/"+me),{x,y});
+};
+joy.ontouchend=()=>{stick.style.left="35px";stick.style.top="35px"};
 </script>
-
 </body>
 </html>
