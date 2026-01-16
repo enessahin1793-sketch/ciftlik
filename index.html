@@ -3,61 +3,37 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Çiftlik Oyunu</title>
+<title>Çiftlik</title>
 
 <style>
-body{margin:0;font-family:Arial;overflow:hidden}
-#world{width:3000px;height:3000px;position:relative}
-.day{background:#7ec850}
-.night{background:#1a2a3a}
-.player{width:40px;height:40px;border-radius:50%;position:absolute;background:red;z-index:5}
+body{margin:0;overflow:hidden;font-family:Arial}
+#camera{width:100vw;height:100vh;overflow:hidden;position:relative}
+#world{width:2000px;height:2000px;position:absolute;background:#7ec850}
+.player{width:40px;height:40px;border-radius:50%;background:red;position:absolute}
 .other{background:blue}
 .animal{width:30px;height:30px;border-radius:50%;background:brown;position:absolute}
-.house{width:200px;height:200px;background:#8b5a2b;position:absolute;left:1400px;top:1400px}
 #ui{position:fixed;top:10px;left:10px;background:#fff;padding:8px;border-radius:8px;z-index:10}
-#inventory,#market{position:fixed;top:80px;right:10px;background:#fff;padding:8px;border-radius:8px;display:none;z-index:10}
-#chat{position:fixed;bottom:0;left:0;right:0;background:#fff;padding:5px}
-#messages{max-height:100px;overflow:auto;font-size:12px}
-#joystick{position:fixed;bottom:80px;left:20px;width:120px;height:120px;border-radius:50%;background:rgba(0,0,0,.2)}
+#joystick{position:fixed;bottom:30px;left:30px;width:120px;height:120px;border-radius:50%;background:rgba(0,0,0,.2)}
 #stick{width:50px;height:50px;border-radius:50%;background:#444;position:absolute;left:35px;top:35px}
-button{margin-top:4px}
 </style>
 </head>
 
-<body class="day">
+<body>
 
 <div id="ui">
-<input id="room" placeholder="Oda">
-<button onclick="join()">GİR</button><br>
-💰<span id="money">0</span>
-<button onclick="toggleInv()">🎒</button>
-<button onclick="toggleMarket()">🏪</button>
+<input id="room" placeholder="Oda kodu">
+<button onclick="join()">GİR</button>
 </div>
 
-<div id="inventory">
-<b>Envanter</b><br>
-🥛 Süt: <span id="milk">0</span>
-</div>
-
-<div id="market">
-<b>Market</b><br>
-<button onclick="sellMilk()">🥛 Süt Sat (50)</button>
-</div>
-
-<div id="world">
-<div class="house"></div>
+<div id="camera">
+  <div id="world"></div>
 </div>
 
 <div id="joystick"><div id="stick"></div></div>
 
-<div id="chat">
-<input id="msg"><button onclick="send()">Gönder</button>
-<div id="messages"></div>
-</div>
-
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, push, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const firebaseConfig={
  apiKey:"AIzaSyBVajz1TsPuM9a2eiCRsPZpVu3NvSA5l1Y",
@@ -70,26 +46,28 @@ const firebaseConfig={
 const app=initializeApp(firebaseConfig);
 const db=getDatabase(app);
 
-let room="",me="p"+Math.random().toString(36).slice(2);
-let x=1500,y=1500,money=0,milk=0,lastMilk=0,inside=false;
+let room="", me="p"+Math.random().toString(36).slice(2);
+let x=1000,y=1000;
 const world=document.getElementById("world");
+const camera=document.getElementById("camera");
 
 function join(){
  room=document.getElementById("room").value;
- set(ref(db,"rooms/"+room+"/players/"+me),{x,y,money,milk,inside});
- onValue(ref(db,"rooms/"+room),snap=>{
-  const r=snap.val()||{};
-  world.innerHTML='<div class="house"></div>';
-  document.body.className=r.day?"day":"night";
+ if(!room) return alert("Oda gir");
 
-  Object.entries(r.players||{}).forEach(([id,p])=>{
-   const d=document.createElement("div");
-   d.className="player"+(id!==me?" other":"");
-   d.style.left=p.x+"px";
-   d.style.top=p.y+"px";
-   world.appendChild(d);
-   if(id===me){money=p.money;milk=p.milk;}
-  });
+ set(ref(db,"rooms/"+room+"/players/"+me),{x,y});
+
+ // hayvanlar yoksa oluştur
+ set(ref(db,"rooms/"+room+"/animals"),{
+  a1:{x:900,y:900},
+  a2:{x:1100,y:1000}
+ });
+
+ onValue(ref(db,"rooms/"+room),(snap)=>{
+  const r=snap.val();
+  if(!r) return;
+
+  world.innerHTML="";
 
   Object.values(r.animals||{}).forEach(a=>{
    const d=document.createElement("div");
@@ -99,63 +77,45 @@ function join(){
    world.appendChild(d);
   });
 
-  document.getElementById("money").innerText=money;
-  document.getElementById("milk").innerText=milk;
+  Object.entries(r.players||{}).forEach(([id,p])=>{
+   const d=document.createElement("div");
+   d.className="player"+(id!==me?" other":"");
+   d.style.left=p.x+"px";
+   d.style.top=p.y+"px";
+   world.appendChild(d);
+   if(id===me){x=p.x;y=p.y;}
+  });
+
+  // kamera takip
+  world.style.left = (window.innerWidth/2 - x)+"px";
+  world.style.top  = (window.innerHeight/2 - y)+"px";
  });
- setInterval(()=>update(ref(db,"rooms/"+room),{day:Math.random()>0.5}),20000);
 }
-
-set(ref(db,"rooms/demo/animals"),{
- a1:{x:1300,y:1300},a2:{x:1600,y:1500}
-});
-
-function tryMilk(){
- const now=Date.now();
- if(now-lastMilk<10000) return alert("Hayvan yoruldu");
- milk++; lastMilk=now;
- update(ref(db,"rooms/"+room+"/players/"+me),{milk});
-}
-
-function sellMilk(){
- if(milk<=0) return;
- milk--; money+=50;
- update(ref(db,"rooms/"+room+"/players/"+me),{milk,money});
-}
-
-document.addEventListener("keydown",e=>{
- if(e.key==="e"){ // ev gir
-  inside=!inside;
-  alert(inside?"Eve girdin":"Evden çıktın");
- }
- if(e.key==="f") tryMilk();
-});
-
-function toggleInv(){inv.style.display=inv.style.display?"":"block"}
-function toggleMarket(){market.style.display=market.style.display?"":"block"}
-
-function send(){
- push(ref(db,"rooms/"+room+"/chat"),msg.value);
- msg.value="";
-}
-
-onValue(ref(db,"rooms/"+room+"/chat"),s=>{
- messages.innerHTML="";
- Object.values(s.val()||{}).forEach(t=>messages.innerHTML+=`<div>${t}</div>`);
-});
 
 // MOBİL JOYSTICK
-let stick=document.getElementById("stick"),joy=document.getElementById("joystick");
+const joy=document.getElementById("joystick");
+const stick=document.getElementById("stick");
+
 joy.ontouchmove=e=>{
- let r=joy.getBoundingClientRect();
- let t=e.touches[0];
- let dx=t.clientX-r.left-60;
- let dy=t.clientY-r.top-60;
- x+=dx*0.05; y+=dy*0.05;
+ const r=joy.getBoundingClientRect();
+ const t=e.touches[0];
+ const dx=t.clientX-r.left-60;
+ const dy=t.clientY-r.top-60;
+
+ x+=dx*0.05;
+ y+=dy*0.05;
+
  stick.style.left=dx+60+"px";
  stick.style.top=dy+60+"px";
- update(ref(db,"rooms/"+room+"/players/"+me),{x,y});
+
+ if(room) update(ref(db,"rooms/"+room+"/players/"+me),{x,y});
 };
-joy.ontouchend=()=>{stick.style.left="35px";stick.style.top="35px"};
+
+joy.ontouchend=()=>{
+ stick.style.left="35px";
+ stick.style.top="35px";
+};
 </script>
+
 </body>
 </html>
