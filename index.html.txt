@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>Mini Çiftliğimiz ❤️</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body { margin:0; font-family:Arial; overflow:hidden; }
+.day { background:#9be59b; }
+.night { background:#1e2a38; color:white; }
+
+#ui {
+  position:fixed; top:0; left:0; right:0;
+  background:rgba(255,255,255,.9);
+  z-index:10; padding:4px; text-align:center;
+}
+
+#map {
+  position:absolute;
+  width:2000px; height:2000px;
+}
+
+.player,.animal,.house {
+  position:absolute;
+  font-size:32px;
+  transition: left .4s linear, top .4s linear;
+}
+
+#chat {
+  position:fixed; bottom:0; left:0; right:0;
+  background:white; z-index:10;
+}
+
+#messages { height:80px; overflow:auto; font-size:14px; }
+
+button,input { padding:6px; margin:2px; }
+</style>
+</head>
+
+<body class="day">
+
+<div id="ui">
+  <input id="room" placeholder="Oda">
+  <button onclick="join()">GİR</button>
+  <span id="money">💰0</span>
+  <span id="heart">❤️0</span>
+  <button onclick="buyHouse()">🏠 Ev (50)</button>
+  <button onclick="exitHouse()">🚪 Çık</button>
+</div>
+
+<div id="map" onclick="moveMe(event)"></div>
+
+<div id="chat">
+  <div id="messages"></div>
+  <input id="msg" placeholder="Mesaj">
+  <button onclick="sendMsg()">Gönder</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+// 🔥 FIREBASE
+firebase.initializeApp({
+  apiKey: "AIzaSyBVajz1TsPuM9a2eiCRsPZpVu3NvSA5l1Y",
+  authDomain: "ciftlik-fbced.firebaseapp.com",
+  databaseURL: "https://ciftlik-fbced-default-rtdb.firebaseio.com",
+  projectId: "ciftlik-fbced"
+});
+const db=firebase.database();
+
+let room="", me=Math.random().toString(36).slice(2);
+let icon=Math.random()>0.5?"👨":"👩";
+let inside=false;
+
+const map=document.getElementById("map");
+
+function join(){
+  room=roomInput.value;
+  db.ref("rooms/"+room+"/players/"+me).set({icon,x:300,y:300,inside:false});
+
+  db.ref("rooms/"+room).on("value",s=>{
+    const r=s.val()||{};
+    render(r);
+    money.innerText="💰"+(r.money||0);
+    heart.innerText="❤️"+(r.heart||0);
+    document.body.className=r.day?"day":"night";
+  });
+
+  db.ref("rooms/"+room+"/chat").limitToLast(20).on("child_added",s=>{
+    messages.innerHTML+=`<div>${s.val()}</div>`;
+    messages.scrollTop=9999;
+  });
+
+  setInterval(tick,5000);
+  setInterval(()=>db.ref("rooms/"+room+"/day").transaction(v=>!v),15000);
+}
+
+function moveMe(e){
+  db.ref("rooms/"+room+"/players/"+me).update({
+    x:e.clientX+window.scrollX,
+    y:e.clientY+window.scrollY
+  });
+}
+
+function render(r){
+  map.innerHTML="";
+  for(let p in r.players){
+    const pl=r.players[p];
+    if(pl.inside!==inside) continue;
+    let d=document.createElement("div");
+    d.className="player"; d.innerText=pl.icon;
+    d.style.left=pl.x+"px";
+    d.style.top=pl.y+"px";
+    map.appendChild(d);
+  }
+  for(let h in r.houses||{}){
+    let d=document.createElement("div");
+    d.className="house"; d.innerText="🏠";
+    d.style.left=r.houses[h].x+"px";
+    d.style.top=r.houses[h].y+"px";
+    d.onclick=()=>enterHouse();
+    map.appendChild(d);
+  }
+}
+
+function buyHouse(){
+  db.ref("rooms/"+room).transaction(r=>{
+    r=r||{};
+    if((r.money||0)>=50){
+      r.money-=50;
+      r.houses=r.houses||{};
+      r.houses[Math.random()]={x:500,y:500};
+    }
+    return r;
+  });
+}
+
+function enterHouse(){
+  inside=true;
+  document.body.style.background="#f5deb3";
+  db.ref("rooms/"+room+"/players/"+me+"/inside").set(true);
+}
+
+function exitHouse(){
+  inside=false;
+  document.body.style.background="";
+  db.ref("rooms/"+room+"/players/"+me+"/inside").set(false);
+}
+
+function tick(){
+  db.ref("rooms/"+room).transaction(r=>{
+    r=r||{};
+    const players=Object.values(r.players||{});
+    const insideCount=players.filter(p=>p.inside).length;
+    if(insideCount>=2){
+      r.heart=(r.heart||0)+1;
+      r.money=(r.money||0)+2;
+    }
+    return r;
+  });
+}
+
+function sendMsg(){
+  if(!msg.value) return;
+  db.ref("rooms/"+room+"/chat").push(icon+": "+msg.value);
+  msg.value="";
+}
+</script>
+
+</body>
+</html>
